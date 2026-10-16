@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Dev-Com",
+    "slug": "dev-com",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/devcom-brand-1024.png",
+    "scheme": "devcom",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.devcom.shop",
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/images/devcom-brand-1024.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Dev-Com to select a product photo."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FFFFFF",
+          "image": "./assets/images/devcom-brand-1024.png",
+          "imageWidth": 220
+        }
+      ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "71ef838f-5d90-418a-a398-eddb67ba6f7c"
+      }
+    },
+    "owner": "arunselvand"
+  }
+}

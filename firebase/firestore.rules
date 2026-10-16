@@ -1,0 +1,151 @@
+rules_version = '2';
+
+// Dev-Com security rules.
+// Admin access = Firebase custom claim "admin: true", which can only be set with the Admin SDK
+// (see firebase/setup/set-admin.js). Users cannot grant it to themselves.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isText(value, minLen, maxLen) {
+      return value is string && value.size() >= minLen && value.size() <= maxLen;
+    }
+
+    function validProductImage(value) {
+      return value is string && (value.size() <= 2000
+        || (value.size() <= 650000
+          && value.matches('^data:image/jpeg;base64,[A-Za-z0-9+/]+={0,2}$')));
+    }
+
+    function validPaymentSettings(d) {
+      return d.keys().hasOnly(['upiId', 'updatedAt'])
+        && d.keys().hasAll(['upiId', 'updatedAt'])
+        && isText(d.upiId, 0, 200)
+        && (d.upiId == '' || d.upiId.matches('^[A-Za-z0-9._-]{2,100}@[A-Za-z0-9.-]{2,100}$'))
+        && d.updatedAt == request.time;
+    }
+
+    match /settings/{settingId} {
+      allow get: if signedIn() && settingId == 'payment';
+      allow list: if false;
+      allow create, update: if isAdmin() && settingId == 'payment' && validPaymentSettings(request.resource.data);
+      allow delete: if false;
+    }
+
+    // ---------- users/{uid} ----------
+    function validNewUser(d) {
+      return d.keys().hasOnly(['email', 'displayName', 'phone', 'address', 'createdAt'])
+        && d.keys().hasAll(['email', 'displayName', 'phone', 'address', 'createdAt'])
+        && d.email == request.auth.token.email
+        && isText(d.displayName, 0, 100)
+        && isText(d.phone, 0, 20)
+        && isText(d.address, 0, 500)
+        && d.createdAt == request.time;
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid) && validNewUser(request.resource.data);
+      // Owners may change only these three fields. There is no role field to tamper with.
+      allow update: if isOwner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'phone', 'address'])
+        && isText(request.resource.data.displayName, 0, 100)
+        && isText(request.resource.data.phone, 0, 20)
+        && isText(request.resource.data.address, 0, 500);
+      allow delete: if false;
+    }
+
+    // ---------- products/{productId} ----------
+    function validProduct(d) {
+      return d.keys().hasOnly(['name', 'description', 'price', 'discountPercent', 'category', 'imageUrl', 'stock', 'createdAt', 'updatedAt'])
+        && d.keys().hasAll(['name', 'description', 'price', 'category', 'imageUrl', 'stock', 'createdAt', 'updatedAt'])
+        && isText(d.name, 1, 120)
+        && isText(d.description, 0, 2000)
+        && d.price is number && d.price > 0 && d.price < 100000000
+        && (!d.keys().hasAny(['discountPercent'])
+          || (d.discountPercent is number && d.discountPercent >= 0 && d.discountPercent <= 100))
+        && isText(d.category, 1, 50)
+        && validProductImage(d.imageUrl)
+        && d.stock is int && d.stock >= 0 && d.stock < 1000000
+        && d.updatedAt == request.time;
+    }
+
+    match /products/{productId} {
+      allow read: if signedIn();
+      allow create: if isAdmin()
+        && validProduct(request.resource.data)
+        && request.resource.data.createdAt == request.time;
+      allow update: if isAdmin()
+        && validProduct(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isAdmin();
+    }
+
+    // ---------- orders/{orderId} ----------
+    function validNewOrder(d) {
+      return d.keys().hasOnly(['userId', 'customerName', 'customerEmail', 'items', 'total', 'status',
+               'paymentMethod', 'paymentStatus', 'paymentUpiId', 'shippingAddress', 'phone', 'stockDeducted', 'createdAt', 'updatedAt'])
+        && d.keys().hasAll(['userId', 'customerName', 'customerEmail', 'items', 'total', 'status',
+                'paymentMethod', 'paymentStatus', 'paymentUpiId', 'shippingAddress', 'phone', 'stockDeducted', 'createdAt', 'updatedAt'])
+        && d.userId == request.auth.uid
+        && isText(d.customerName, 2, 100)
+        && d.customerEmail == request.auth.token.email
+        && d.items is list && d.items.size() > 0 && d.items.size() <= 50
+        && d.total is number && d.total > 0
+        && d.status == 'pending'
+        && ((d.paymentMethod == 'COD' && d.paymentStatus == 'cash_on_delivery' && d.paymentUpiId == '')
+          || (d.paymentMethod == 'UPI' && d.paymentStatus == 'pending'
+            && d.paymentUpiId == get(/databases/$(database)/documents/settings/payment).data.upiId))
+        && d.stockDeducted == false
+        && isText(d.shippingAddress, 10, 500)
+        && isText(d.phone, 7, 20)
+        && d.createdAt == request.time
+        && d.updatedAt == request.time;
+    }
+
+    function allowedTransition(from, to) {
+      return (from == 'pending' && (to == 'confirmed' || to == 'cancelled'))
+        || (from == 'confirmed' && (to == 'shipped' || to == 'cancelled'))
+        || (from == 'shipped' && (to == 'delivered' || to == 'cancelled'));
+    }
+
+    match /orders/{orderId} {
+      allow get: if isAdmin() || isOwner(resource.data.userId);
+      allow list: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+      allow create: if validNewOrder(request.resource.data);
+      // Only admins change orders, and only status / stock bookkeeping, along valid transitions.
+      allow update: if isAdmin() && (
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'stockDeducted', 'updatedAt'])
+          && allowedTransition(resource.data.status, request.resource.data.status)
+          && (request.resource.data.status == 'cancelled'
+            || resource.data.paymentMethod != 'UPI'
+            || resource.data.paymentStatus == 'paid')
+          && request.resource.data.updatedAt == request.time)
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'updatedAt'])
+          && resource.data.paymentMethod == 'UPI'
+          && resource.data.status == 'pending'
+          && resource.data.paymentStatus == 'pending'
+          && request.resource.data.paymentStatus == 'paid'
+          && request.resource.data.updatedAt == request.time)
+      );
+      allow delete: if isAdmin()
+        || (isOwner(resource.data.userId)
+          && resource.data.status == 'pending'
+          && resource.data.stockDeducted == false
+          && resource.data.paymentStatus != 'paid');
+    }
+
+    // Everything else is denied by default.
+  }
+}

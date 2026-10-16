@@ -1,0 +1,13 @@
+{
+  "name": "dev-com-setup",
+  "private": true,
+  "version": "1.0.0",
+  "description": "One-time admin tools for Dev-Com. Run on your own computer only; never ship these with the app.",
+  "scripts": {
+    "set-admin": "node set-admin.js",
+    "seed": "node seed-products.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.0"
+  }
+}
