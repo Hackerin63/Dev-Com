@@ -44,6 +44,31 @@ npx firebase-tools login
 npx firebase-tools deploy --only firestore:rules --project YOUR_PROJECT_ID
 ```
 
+## 5a. Set up Razorpay test payments (optional)
+Razorpay payments are created and verified by Firebase Cloud Functions; the app never receives the API secret. Cloud Functions require the Firebase **Blaze** plan, even when using Razorpay test credentials.
+
+1. In the Razorpay Dashboard, switch to **Test Mode** and generate test API keys. Do not use live keys: the deployed functions reject any key ID that does not start with `rzp_test_`.
+2. In the Razorpay Dashboard, create a webhook for the `payment.captured` event and set a webhook secret. You will register the URL after deploying the functions.
+3. From PowerShell, set the three Firebase secrets and deploy (replace the project ID):
+   ```
+   cd firebase
+   npx firebase-tools functions:secrets:set RAZORPAY_KEY_ID --project YOUR_PROJECT_ID
+   npx firebase-tools functions:secrets:set RAZORPAY_KEY_SECRET --project YOUR_PROJECT_ID
+   npx firebase-tools functions:secrets:set RAZORPAY_WEBHOOK_SECRET --project YOUR_PROJECT_ID
+   npx firebase-tools deploy --only functions --project YOUR_PROJECT_ID
+   ```
+   Enter the test key ID, test key secret, and the exact webhook secret when prompted. Keep all three server-side; do not add them to `.env`, app config, or Firestore.
+4. Copy the deployed `razorpayWebhook` function URL from the deploy output into the Razorpay webhook settings. Subscribe to `payment.captured` and use the same webhook secret configured in Firebase.
+5. Build and run a native app containing the Razorpay module:
+   ```
+   npx expo prebuild
+   npx expo run:android
+   ```
+   Use an EAS development/production build if you do not build locally. Expo Go does not include the native Razorpay SDK.
+6. Place a small test order using Razorpay's test payment details from its Dashboard documentation. The order is marked paid only after the server verifies the checkout signature and confirms the captured amount; the webhook also records captured payments if the app closes before returning from checkout.
+
+The backend recomputes product prices and checks stock from Firestore; it does not trust the cart's prices or total. Admins cannot confirm a Razorpay order until its payment is verified. Gateway order records are retained as a payment audit trail and cannot be deleted. If payment completes while an order is being cancelled, the webhook still records it as paid so it can be reconciled; refunds remain manual.
+
 ## 6. Create the first admin (secure method)
 Admin rights are a Firebase **custom claim** that only the Admin SDK can set. The app has no button, profile field, or local setting that can grant it.
 
@@ -75,19 +100,20 @@ Demo images come from picsum.photos and need internet. Products with no image UR
 |---|---|
 | `users/{uid}` | `email`, `displayName`, `phone`, `address`, `createdAt`. **No role field.** |
 | `products/{id}` | `name`, `description`, `price` (number), `discountPercent` (number, 0-100), `category`, `imageUrl`, `stock` (integer), `createdAt`, `updatedAt` |
-| `orders/{id}` | `userId`, `customerName`, `customerEmail`, `items[]` (`productId`, `name`, `price`, `quantity`, `imageUrl`), `total`, `status` (`pending` / `confirmed` / `shipped` / `delivered` / `cancelled`), `paymentMethod` (`COD` / `UPI`), `paymentStatus`, `paymentUpiId`, `shippingAddress`, `phone`, `stockDeducted`, `createdAt`, `updatedAt` |
+| `orders/{id}` | `userId`, `customerName`, `customerEmail`, `items[]` (`productId`, `name`, `price`, `quantity`, `imageUrl`), `total`, `status` (`pending` / `confirmed` / `shipped` / `delivered` / `cancelled`), `paymentMethod` (`COD` / `UPI` / `RAZORPAY`), `paymentStatus`, `paymentUpiId`, optional `razorpayOrderId` / `razorpayPaymentId`, `shippingAddress`, `phone`, `stockDeducted`, `createdAt`, `updatedAt` |
 | `settings/payment` | `upiId`, `updatedAt`. Customers can read the configured UPI ID; only admins can change it. |
 
 ## What the rules enforce
 - **Products:** any signed-in user can read; only admins can create, edit, or delete, with field and type checks. Product photos may be HTTPS URLs or compressed JPEG data URIs up to 650,000 characters.
 - **Users:** you can read and edit only your own profile, and only name, phone, and address. Admins can read all. Nobody can delete.
-- **Orders:** customers can create orders only for themselves with `pending` status and no stock deduction. UPI orders must use the configured UPI ID. Customers can read only their own orders. Only admins can verify UPI payment and update order status / stock bookkeeping.
+- **Orders:** customers can create COD/UPI orders only for themselves with `pending` status and no stock deduction. UPI orders must use the configured UPI ID. Razorpay orders are created by authenticated Cloud Functions using server-side catalogue prices; only the payment-verification function can mark gateway orders paid. Customers can read only their own orders. Only admins can update order status / stock bookkeeping.
 - **Payment settings:** signed-in customers can read the UPI ID; only admins can update it. Other settings documents are denied.
 
 ## Known limits (be aware)
 - **Item prices inside an order cannot be verified by rules** (rules can't loop over a list). The app counters this: when an admin confirms an order it re-checks every price and the total against the catalogue and refuses on a mismatch. A customer who edits their own app could still *place* a bogus order, but it cannot be confirmed. Full prevention needs Cloud Functions (paid Blaze plan).
 - **Stock** is deducted when an admin confirms an order, not when it is placed, so two customers can briefly order the last item. The second confirmation then fails with "Not enough stock".
-- **UPI payments are manual:** the app opens an installed UPI app with the amount and order reference, but there is no payment gateway or automatic confirmation. An admin must verify the transfer in their UPI/bank account and mark it received before confirming the order. Refunds are also handled outside the app.
+- **UPI payments are manual:** the app opens an installed UPI app with the amount and order reference. An admin must verify the transfer in their UPI/bank account and mark it received before confirming the order.
+- **Razorpay is test-mode only:** test credentials and a deployed Firebase Functions backend are required. Refunds and reconciliation for cancelled paid orders are not automated.
 - **Browsing requires an account**, since product reads need sign-in. To allow guest browsing, change `allow read: if signedIn();` on `products` to `allow read: if true;` and add a guest path in the app.
 - These rules were reviewed by hand and the app was type-checked and bundled, but I could not run the Firebase emulator here. Test them once with a real project (customer cannot open admin screens or see other orders; admin can).
 

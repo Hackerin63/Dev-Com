@@ -40,9 +40,11 @@ export interface Order {
   items: OrderItem[];
   total: number;
   status: OrderStatus;
-  paymentMethod: 'COD' | 'UPI';
+  paymentMethod: 'COD' | 'UPI' | 'RAZORPAY';
   paymentStatus: 'pending' | 'paid' | 'cash_on_delivery';
   paymentUpiId: string;
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
   shippingAddress: string;
   phone: string;
   stockDeducted: boolean;

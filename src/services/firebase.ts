@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth, getReactNativePersistence, initializeAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getFunctions } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
 
 // Each variable must be referenced literally so Expo can inline it at build time.
@@ -39,4 +40,5 @@ function createAuth() {
 
 export const auth = createAuth();
 export const db = getFirestore(app);
+export const functions = getFunctions(app, 'asia-south1');
 export const storage = getStorage(app);

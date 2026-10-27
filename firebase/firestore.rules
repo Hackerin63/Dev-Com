@@ -124,12 +124,12 @@ service cloud.firestore {
       allow get: if isAdmin() || isOwner(resource.data.userId);
       allow list: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
       allow create: if validNewOrder(request.resource.data);
-      // Only admins change orders, and only status / stock bookkeeping, along valid transitions.
+      // Admins manage status/stock; gateway payment status is written only by trusted server code.
       allow update: if isAdmin() && (
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'stockDeducted', 'updatedAt'])
           && allowedTransition(resource.data.status, request.resource.data.status)
           && (request.resource.data.status == 'cancelled'
-            || resource.data.paymentMethod != 'UPI'
+            || resource.data.paymentMethod == 'COD'
             || resource.data.paymentStatus == 'paid')
           && request.resource.data.updatedAt == request.time)
         || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'updatedAt'])
@@ -139,10 +139,11 @@ service cloud.firestore {
           && request.resource.data.paymentStatus == 'paid'
           && request.resource.data.updatedAt == request.time)
       );
-      allow delete: if isAdmin()
+      allow delete: if (isAdmin() && resource.data.paymentMethod != 'RAZORPAY')
         || (isOwner(resource.data.userId)
           && resource.data.status == 'pending'
           && resource.data.stockDeducted == false
+          && resource.data.paymentMethod != 'RAZORPAY'
           && resource.data.paymentStatus != 'paid');
     }
 

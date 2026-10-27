@@ -68,7 +68,10 @@ export default function OrdersScreen() {
             order={item}
             onPress={() => router.push(`/order/${item.id}`)}
             onDelete={
-              item.status === 'pending' && !item.stockDeducted && item.paymentStatus !== 'paid'
+              item.status === 'pending' &&
+              !item.stockDeducted &&
+              item.paymentStatus !== 'paid' &&
+              item.paymentMethod !== 'RAZORPAY'
                 ? () => requestDelete(item)
                 : undefined
             }

@@ -109,7 +109,7 @@ export default function ManageOrdersScreen() {
         renderItem={({ item: order }) => {
           const open = openId === order.id;
           const nextOptions = NEXT_STATUS[order.status].filter(
-            (next) => !(next === 'confirmed' && order.paymentMethod === 'UPI' && order.paymentStatus !== 'paid'),
+            (next) => !(next === 'confirmed' && order.paymentMethod !== 'COD' && order.paymentStatus !== 'paid'),
           );
           return (
             <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -138,9 +138,13 @@ export default function ManageOrdersScreen() {
                   <Text style={[typography.small, { color: colors.textMuted }]}>
                     {order.paymentMethod === 'UPI'
                       ? order.paymentStatus === 'paid'
-                        ? 'Payment verified'
+                        ? 'UPI payment verified'
                         : `Awaiting payment verification · ${order.paymentUpiId}`
-                      : 'Pay on delivery'}
+                      : order.paymentMethod === 'RAZORPAY'
+                        ? order.paymentStatus === 'paid'
+                          ? `Razorpay payment verified · ${order.razorpayPaymentId ?? ''}`
+                          : 'Awaiting Razorpay test payment'
+                        : 'Pay on delivery'}
                   </Text>
                   {order.paymentMethod === 'UPI' && order.paymentStatus === 'pending' && order.status === 'pending' ? (
                     <Button
@@ -188,15 +192,17 @@ export default function ManageOrdersScreen() {
                       This order is closed. Its status can no longer change.
                     </Text>
                   )}
-                  <Button
-                    title="Delete order"
-                    icon="trash-outline"
-                    variant="danger"
-                    small
-                    loading={busyId === order.id}
-                    disabled={busyId !== null && busyId !== order.id}
-                    onPress={() => requestDelete(order)}
-                  />
+                  {order.paymentMethod !== 'RAZORPAY' ? (
+                    <Button
+                      title="Delete order"
+                      icon="trash-outline"
+                      variant="danger"
+                      small
+                      loading={busyId === order.id}
+                      disabled={busyId !== null && busyId !== order.id}
+                      onPress={() => requestDelete(order)}
+                    />
+                  ) : null}
                 </View>
               ) : null}
             </View>

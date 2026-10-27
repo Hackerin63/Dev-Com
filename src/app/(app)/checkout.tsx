@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import RazorpayCheckout from 'react-native-razorpay';
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -14,6 +15,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { createOrder } from '@/services/orderService';
 import { getPaymentSettings } from '@/services/paymentSettingsService';
+import { createRazorpayPayment, verifyRazorpayPayment } from '@/services/razorpayPaymentService';
 import { friendlyError } from '@/utils/errors';
 import { formatPrice } from '@/utils/format';
 import { validateAddress, validateName, validatePhone } from '@/utils/validation';
@@ -35,7 +37,7 @@ export default function CheckoutScreen() {
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'UPI'>('COD');
+  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'UPI' | 'RAZORPAY'>('COD');
 
   if (items.length === 0 && !busy) {
     return (
@@ -64,16 +66,46 @@ export default function CheckoutScreen() {
 
     setBusy(true);
     try {
-      const orderId = await createOrder({
-        userId: user.uid,
-        customerName: name,
-        customerEmail: user.email ?? '',
-        phone,
-        shippingAddress: address,
-        items,
-        paymentMethod,
-        paymentUpiId: paymentMethod === 'UPI' ? paymentSettings?.upiId ?? '' : '',
-      });
+      let orderId: string;
+      if (paymentMethod === 'RAZORPAY') {
+        const intent = await createRazorpayPayment({
+          customerName: name,
+          phone,
+          shippingAddress: address,
+          items: items.map(({ productId, quantity }) => ({ productId, quantity })),
+        });
+        const result = await RazorpayCheckout.open({
+          key: intent.keyId,
+          amount: intent.amount,
+          currency: intent.currency,
+          name: 'Dev-Com',
+          description: 'Payment for your order',
+          order_id: intent.razorpayOrderId,
+          prefill: { name, email: user.email ?? '', contact: phone },
+          theme: { color: colors.primary },
+        });
+        if (!result.razorpay_payment_id || !result.razorpay_order_id || !result.razorpay_signature) {
+          throw new Error('Razorpay did not return the details needed to verify this payment.');
+        }
+        await verifyRazorpayPayment({
+          firebaseOrderId: intent.firebaseOrderId,
+          razorpayOrderId: result.razorpay_order_id,
+          razorpayPaymentId: result.razorpay_payment_id,
+          razorpaySignature: result.razorpay_signature,
+        });
+        orderId = intent.firebaseOrderId;
+      } else {
+        orderId = await createOrder({
+          userId: user.uid,
+          customerName: name,
+          customerEmail: user.email ?? '',
+          phone,
+          shippingAddress: address,
+          items,
+          paymentMethod,
+          paymentUpiId: paymentMethod === 'UPI' ? paymentSettings?.upiId ?? '' : '',
+        });
+      }
       // Remember the delivery details for next time (best effort).
       if (!profile?.phone || !profile?.address) {
         saveProfile({ displayName: name, phone, address }).catch(() => {});
@@ -137,6 +169,18 @@ export default function CheckoutScreen() {
           <Ionicons name={paymentMethod === 'UPI' ? 'radio-button-on' : 'radio-button-off'} size={22} color={paymentMethod === 'UPI' ? colors.primary : colors.textMuted} />
         </Pressable>
       ) : null}
+      <Pressable
+        accessibilityRole="radio"
+        accessibilityState={{ selected: paymentMethod === 'RAZORPAY' }}
+        onPress={() => setPaymentMethod('RAZORPAY')}
+        style={[styles.payment, { backgroundColor: colors.surface, borderColor: paymentMethod === 'RAZORPAY' ? colors.primary : colors.border }]}>
+        <Ionicons name="card-outline" size={24} color={paymentMethod === 'RAZORPAY' ? colors.primary : colors.textMuted} />
+        <View style={styles.flex}>
+          <Text style={[typography.bodyStrong, { color: colors.text }]}>Razorpay · Test mode</Text>
+          <Text style={[typography.small, { color: colors.textMuted }]}>Pay securely with card, UPI or netbanking.</Text>
+        </View>
+        <Ionicons name={paymentMethod === 'RAZORPAY' ? 'radio-button-on' : 'radio-button-off'} size={22} color={paymentMethod === 'RAZORPAY' ? colors.primary : colors.textMuted} />
+      </Pressable>
 
       <Text style={[typography.h3, styles.section, { color: colors.text }]}>Order summary</Text>
       <View style={[styles.summary, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -160,7 +204,11 @@ export default function CheckoutScreen() {
         </Text>
       ) : null}
 
-      <Button title={`Place order · ${formatPrice(total)}`} onPress={placeOrder} loading={busy} />
+      <Button
+        title={paymentMethod === 'RAZORPAY' ? `Pay · ${formatPrice(total)}` : `Place order · ${formatPrice(total)}`}
+        onPress={placeOrder}
+        loading={busy}
+      />
     </Screen>
   );
 }

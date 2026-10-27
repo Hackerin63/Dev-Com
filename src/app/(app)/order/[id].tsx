@@ -113,6 +113,22 @@ export default function OrderDetailsScreen() {
               </>
             ) : null}
           </>
+        ) : order.paymentMethod === 'RAZORPAY' ? (
+          <>
+            <Text style={[typography.bodyStrong, { color: colors.text }]}>
+              Razorpay test payment · {order.paymentStatus === 'paid' ? 'Paid' : 'Awaiting payment'}
+            </Text>
+            {order.razorpayPaymentId ? (
+              <Text selectable style={[typography.small, { color: colors.textMuted }]}>
+                Payment reference: {order.razorpayPaymentId}
+              </Text>
+            ) : null}
+            {order.paymentStatus !== 'paid' ? (
+              <Text style={[typography.small, { color: colors.textMuted }]}>
+                Payment has not been verified. If you completed checkout, refresh this order or contact the shop before paying again.
+              </Text>
+            ) : null}
+          </>
         ) : (
           <>
             <Text style={[typography.bodyStrong, { color: colors.text }]}>Cash on Delivery</Text>

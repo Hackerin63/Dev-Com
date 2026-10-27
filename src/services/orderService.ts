@@ -41,7 +41,7 @@ function mapOrder(id: string, data: DocumentData): Order {
     items,
     total: Number(data.total ?? 0),
     status: (data.status ?? 'pending') as OrderStatus,
-    paymentMethod: data.paymentMethod === 'UPI' ? 'UPI' : 'COD',
+    paymentMethod: data.paymentMethod === 'UPI' ? 'UPI' : data.paymentMethod === 'RAZORPAY' ? 'RAZORPAY' : 'COD',
     paymentStatus:
       data.paymentStatus === 'paid'
         ? 'paid'
@@ -49,6 +49,8 @@ function mapOrder(id: string, data: DocumentData): Order {
           ? 'pending'
           : 'cash_on_delivery',
     paymentUpiId: String(data.paymentUpiId ?? ''),
+    razorpayOrderId: String(data.razorpayOrderId ?? ''),
+    razorpayPaymentId: String(data.razorpayPaymentId ?? ''),
     shippingAddress: String(data.shippingAddress ?? ''),
     phone: String(data.phone ?? ''),
     stockDeducted: data.stockDeducted === true,
@@ -165,8 +167,8 @@ export async function updateOrderStatus(order: Order, next: OrderStatus): Promis
   if (!NEXT_STATUS[order.status].includes(next)) {
     throw new Error('That status change is not allowed.');
   }
-  if (next === 'confirmed' && order.paymentMethod === 'UPI' && order.paymentStatus !== 'paid') {
-    throw new Error('Verify the UPI transfer and mark the order as paid before confirming it.');
+  if (next === 'confirmed' && order.paymentMethod !== 'COD' && order.paymentStatus !== 'paid') {
+    throw new Error('Verify the payment before confirming this order.');
   }
 
   await runTransaction(db, async (tx) => {
