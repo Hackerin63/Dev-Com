@@ -1,5 +1,0 @@
-Commit verification complete.
-HEAD: 5f0dd4f Update app features and Firebase integration
-Status: clean (no pending changes)
-Remote: origin -> https://github.com/Hackerin63/Dev-Com.git
-Validation: npm run typecheck passed
